@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Arquivos do app no instalador (testes e scripts de build ficam de fora)
-const files = ['main.js', 'src/**/*', 'icon.png', 'package.json'];
+const files = ['main.js', 'auto-update.js', 'src/**/*', 'icon.png', 'package.json'];
 if (fs.existsSync(path.join(__dirname, '.env'))) {
   files.push('.env');
 }

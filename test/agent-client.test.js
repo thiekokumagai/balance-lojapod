@@ -183,3 +183,16 @@ test('token recusado avisa e para de mandar peso', () => {
   assert.deepEqual(statuses.at(-1), { state: 'auth_error', message: 'Token inválido.' });
   assert.equal(client.streaming, false);
 });
+
+test('streaming (sinal de "pesagem em curso" usado pelo auto-update) liga com o PDV e desliga ao parar ou cair', () => {
+  const { client, socket: getSocket } = setup();
+  const socket = getSocket();
+  assert.equal(client.streaming, false);
+  socket.serverSays('scale.stream', { active: true });
+  assert.equal(client.streaming, true);
+  socket.serverSays('scale.stream', { active: false });
+  assert.equal(client.streaming, false);
+  socket.serverSays('scale.stream', { active: true });
+  socket.serverSays('disconnect');
+  assert.equal(client.streaming, false);
+});

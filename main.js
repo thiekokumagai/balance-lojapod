@@ -9,6 +9,7 @@ const { io } = require('socket.io-client');
 const { ConfigStore } = require('./src/config-store');
 const { ScaleService } = require('./src/scale-service');
 const { AgentClient } = require('./src/agent-client');
+const { createAutoUpdate } = require('./auto-update');
 const { getDriver } = require('./src/drivers');
 const serial = require('./src/serial');
 
@@ -38,8 +39,6 @@ let activationWindow = null;
 let serverStatus = 'Desconectado';
 let scaleStatus = 'Parada';
 let lastReading = null;
-let isManualUpdateCheck = false;
-let isCheckingForUpdates = false;
 
 function formatKg(kg) {
   return `${Number(kg).toFixed(3).replace('.', ',')} kg`;
@@ -212,90 +211,17 @@ ipcMain.on('validate-token', async (event, { token, name }) => {
 
 // ------------------------------------------------------------------ atualização automática
 
-function setupAutoUpdater() {
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-
-  autoUpdater.on('checking-for-update', () => {
-    isCheckingForUpdates = true;
-  });
-  autoUpdater.on('update-available', (info) => {
-    if (isManualUpdateCheck) {
-      isManualUpdateCheck = false;
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Atualização disponível',
-        message: `Nova versão (v${info.version}) encontrada.`,
-        detail: 'O download começou em segundo plano. Avisaremos quando estiver pronta.',
-        buttons: ['OK'],
-      });
-    }
-  });
-  autoUpdater.on('update-not-available', () => {
-    isCheckingForUpdates = false;
-    if (isManualUpdateCheck) {
-      isManualUpdateCheck = false;
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Sem atualizações',
-        message: `Você já está na versão mais recente (v${app.getVersion()}).`,
-        buttons: ['OK'],
-      });
-    }
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    isCheckingForUpdates = false;
-    isManualUpdateCheck = false;
-    dialog
-      .showMessageBox({
-        type: 'info',
-        title: 'Atualização pronta',
-        message: `A versão v${info.version} foi baixada.`,
-        detail: 'Reiniciar a balança agora para instalar? Se preferir, ela será instalada ao fechar o programa.',
-        buttons: ['Reiniciar e atualizar', 'Depois'],
-        defaultId: 0,
-        cancelId: 1,
-      })
-      .then(({ response }) => {
-        if (response === 0) {
-          app.isQuiting = true;
-          autoUpdater.quitAndInstall();
-        }
-      })
-      .catch(() => {});
-  });
-  autoUpdater.on('error', (err) => {
-    isCheckingForUpdates = false;
-    console.error('Erro ao verificar atualizações:', err && err.message ? err.message : err);
-    if (isManualUpdateCheck) {
-      isManualUpdateCheck = false;
-      dialog.showMessageBox({
-        type: 'warning',
-        title: 'Erro ao verificar atualizações',
-        message: 'Não foi possível verificar atualizações agora.',
-        buttons: ['OK'],
-      });
-    }
-  });
+function notifyTray(title, content) {
+  console.log(`[update] ${title}: ${content}`);
+  if (tray && process.platform === 'win32') {
+    tray.displayBalloon({ title, content, iconType: 'info', noSound: true });
+  }
 }
 
+let autoUpdate = null;
+
 function checkForUpdates(manual = false) {
-  if (!app.isPackaged) {
-    if (manual) {
-      dialog.showMessageBox({
-        type: 'info',
-        title: 'Modo desenvolvimento',
-        message: 'A verificação de atualizações só funciona na versão instalada (.exe).',
-        buttons: ['OK'],
-      });
-    }
-    return;
-  }
-  if (isCheckingForUpdates) return;
-  isManualUpdateCheck = manual;
-  autoUpdater.checkForUpdates().catch(() => {
-    isCheckingForUpdates = false;
-  });
+  if (autoUpdate) autoUpdate.check(manual);
 }
 
 // ------------------------------------------------------------------ início
@@ -345,7 +271,13 @@ app.whenReady().then(async () => {
   await scale.configure(store.get().scale);
   startAgent();
 
-  setupAutoUpdater();
+  // Ocupada = algum PDV está acompanhando o peso agora (pesagem em curso)
+  autoUpdate = createAutoUpdate({
+    autoUpdater,
+    app,
+    isBusy: () => Boolean(client && client.streaming),
+    notify: notifyTray,
+  });
   setTimeout(() => checkForUpdates(false), 10000);
   setInterval(() => checkForUpdates(false), UPDATE_CHECK_INTERVAL_MS);
 });
