@@ -1,6 +1,6 @@
 {
   "name": "balance-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agente de Balança do Podi Pedir: lê a balança do balcão e manda o peso para o PDV",
   "main": "main.js",
   "private": true,
