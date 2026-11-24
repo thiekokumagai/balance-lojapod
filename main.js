@@ -20,7 +20,7 @@ const serial = require('./src/serial');
  */
 
 const API_URL = (process.env.API_URL || 'https://api.podipedir.com.br').replace(/\/+$/, '');
-const UPDATE_CHECK_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 horas
+const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000; // 20 minutos (só consulta o GitHub; o download só acontece com versão nova)
 
 // Uma instância só: duas abrindo a mesma porta COM brigariam pela balança
 if (!app.requestSingleInstanceLock()) {
