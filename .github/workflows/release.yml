@@ -1,0 +1,80 @@
+name: Release Windows (.exe)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Instalar dependências
+        shell: pwsh
+        run: npm ci
+
+      - name: Testes
+        shell: pwsh
+        run: npm test
+
+      - name: Subir versão patch e publicar tag
+        id: version
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG=$(npm version patch -m "chore(release): v%s [skip ci]")
+          git push origin HEAD:main --follow-tags
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Gerar .env para o build
+        shell: pwsh
+        env:
+          API_URL: ${{ vars.API_URL || secrets.API_URL }}
+        run: |
+          if ($env:API_URL) {
+            Set-Content -Path ".env" -Value "API_URL=$($env:API_URL)" -NoNewline -Encoding UTF8
+          }
+
+      - name: Gerar instalador Windows
+        shell: pwsh
+        run: |
+          node ./node_modules/electron-builder/out/cli/cli.js --config electron-builder.js --win --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist/balance-agent-setup.exe") -or -not (Test-Path "dist/latest.yml")) {
+            Write-Error "Build não gerou dist/balance-agent-setup.exe ou dist/latest.yml"
+            exit 1
+          }
+
+      - name: Publicar release única no GitHub
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $files = @("dist/balance-agent-setup.exe", "dist/latest.yml")
+          if (Test-Path "dist/balance-agent-setup.exe.blockmap") {
+            $files += "dist/balance-agent-setup.exe.blockmap"
+          }
+          gh release create $tag @files --title $tag --generate-notes --latest
